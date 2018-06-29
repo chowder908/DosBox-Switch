@@ -1,4 +1,3 @@
-
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
@@ -32,11 +31,9 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	src src/cpu src/debug src/dos src/fpu src/gui \
-				src/hardware src/hardware/serialport src/ints src/libs \
-				src/misc \ src/shell \ src/midi 
-INCLUDES 	:=  include / 
+SOURCES		:=	src src/cpu src/dos
 DATA		:=	data
+INCLUDES	:=	include
 EXEFS_SRC	:=	exefs_src
 GIT_VERSION := $(shell git describe --abbrev=6 --dirty --always --tags)
 ICON		:= icon.jpg
@@ -45,21 +42,20 @@ ICON		:= icon.jpg
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE
-CC        = aarch64-none-elf-gcc
-CFLAGS	:=	-g -Wl,-q -O2 \
+
+CFLAGS	:=	-DGIT_VERSION=\"$(GIT_VERSION)\" -g -Wl,-q -O2 \
 			-fsigned-char -ffast-math -ffunction-sections \
 			$(ARCH) $(DEFINES)
 
-CFLAGS	+=	$(INCLUDE) -DSWITCH 
+CFLAGS	+=	$(INCLUDE) -DSWITCH -DDEBUG
 
-CXXFLAGS	:= $(CFLAGS) -fno-exceptions -std=gnu++11
+CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:= -lnx -lc -lm
-LINK      = aarch64-none-elf-gcc
-CPP		  = aarch64-none-elf-g++
+
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
@@ -75,39 +71,12 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
-export TOPDIR	:=	$(CURDIR)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-			$(foreach dir,$(DATA),$(CURDIR)/$(dir))
+					$(foreach dir,$(DATA),$(CURDIR)/$(dir))
 
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
-
-ifeq ($(strip $(CPPFILES)),)
-	export LD	:=	$(CC)
-else
-	export LD	:=	$(CXX)
-endif
-
-export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
-					$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) \
-					$(TTFFILES:.ttf=.ttf.o) $(PNGFILES:.png=.png.o) \
-					$(OGGFILES:.ogg=.ogg.o) $(PCMFILES:.pcm=.pcm.o)
-
-#---------------------------------------------------------------------------------
-# build a list of include paths
-#---------------------------------------------------------------------------------
-export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
-			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-			-I$(CURDIR)/$(BUILD)
-
-export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
-
-export BUILD_EXEFS_SRC := $(TOPDIR)/$(EXEFS_SRC)
 #---------------------------------------------------------------------------------
 # automatically build a list of object files for our project
 #---------------------------------------------------------------------------------
@@ -119,6 +88,33 @@ TTFFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.ttf)))
 PNGFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.png)))
 OGGFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.ogg)))
 PCMFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.pcm)))
+
+
+#---------------------------------------------------------------------------------
+# use CXX for linking C++ projects, CC for standard C
+#---------------------------------------------------------------------------------
+ifeq ($(strip $(CPPFILES)),)
+	export LD	:=	$(CC)
+else
+	export LD	:=	$(CXX)
+endif
+
+export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
+					$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) \
+					$(TTFFILES:.ttf=.ttf.o) $(PNGFILES:.png=.png.o) \
+					$(OGGFILES:.ogg=.ogg.o) $(PCMFILES:.pcm=.pcm.o)
+ifeq ($(strip $(CPPFILES)),)
+
+export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
+			$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
+
+export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
+			-I$(CURDIR)/$(BUILD)
+
+export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+
+export BUILD_EXEFS_SRC := $(TOPDIR)/$(EXEFS_SRC)
 
 ifeq ($(strip $(ICON)),)
 	icons := $(wildcard *.jpg)
@@ -145,6 +141,8 @@ ifneq ($(APP_TITLEID),)
 	export NACPFLAGS += --titleid=$(APP_TITLEID)
 endif
 
+.PHONY: $(BUILD) clean all
+
 #---------------------------------------------------------------------------------
 # build a list of library paths
 #---------------------------------------------------------------------------------
@@ -153,6 +151,7 @@ export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib) \
 
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
 .PHONY: $(BUILD) clean
+
 #---------------------------------------------------------------------------------
 all: $(BUILD)
 
@@ -190,6 +189,10 @@ endif
 $(OUTPUT).elf	:	$(OFILES)
 
 #---------------------------------------------------------------------------------
+# you need a rule like this for each extension you use as binary data
+#---------------------------------------------------------------------------------
+%.bin.o	:	%.bin
+#---------------------------------------------------------------------------------
 # This rule links in binary data with .ttf, .png, and .mp3 extensions
 #---------------------------------------------------------------------------------
 %.ttf.o : %.ttf
@@ -207,9 +210,12 @@ $(OUTPUT).elf	:	$(OFILES)
 %.pcm.o : %.pcm
 	@echo $(notdir $<)
 	$(bin2o)
+	
+	@echo $(notdir $<)
+	@$(bin2o)
 
 -include $(DEPENDS)
 
-#---------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
 endif
-#---------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
